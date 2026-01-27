@@ -1,0 +1,127 @@
+# Dotted Version Vectors (DVV)
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A GHC-Haskell implementation of [**Dotted Version Vectors (DVV)**](https://gsd.di.uminho.pt/members/vff/dotted-version-vectors-2012.pdf), a data structure for tracking causality and resolving conflicts in distributed systems. This library is inspired by the canonical Erlang example implementation and leverages GHC to provide a safe and expressive API.
+
+## Table of Contents
+
+- [Introduction](#introduction)
+- [Key Concepts](#key-concepts)
+- [Usage](#usage)
+  - [Construction](#construction)
+  - [Recording Events](#recording-events)
+  - [Synchronization](#synchronization)
+  - [Conflict Resolution](#conflict-resolution)
+- [Type Safety](#type-safety)
+
+## Introduction
+
+In distributed systems, multiple actors can concurrently update a piece of data. Traditional version vectors can track which updates happened after others, but they struggle to represent multiple concurrent "siblings" when conflicts occur.
+
+**Dotted Version Vectors** solve this by combining:
+1.  **History (Context):** A summary of all events seen by the system.
+2.  **Dots:** Discrete events (actor + sequence number) that created specific values.
+3.  **Siblings:** A set of values that are concurrent (i.e., none of them has "seen" the others).
+
+## Key Concepts
+
+-   **Dot:** A pair `{Actor, Counter}` representing a single write.
+-   **History (Version Vector):** A mapping from actors to their latest sequence numbers.
+-   **DVV:** A structure containing a history and a set of active siblings.
+
+### How it Works
+
+DVV provides a mechanism for **causal ordering**. When an actor writes a value, it creates a "Dot" – a unique identifier for that specific version of the data. 
+
+```mermaid
+graph TD
+    A[DVV State] --> B(Causal History)
+    A --> C(Active Siblings)
+    B --> B1[Actor A: 5]
+    B --> B2[Actor B: 3]
+    C --> C1["Dot(A, 6): Value 'X'"]
+    C --> C2["Dot(B, 4): Value 'Y'"]
+```
+
+1.  **Event Creation:** When actor `A` updates a value, it increments its counter in the DVV's history. The new value is stored associated with the new Dot `(A, next_counter)`.
+2.  **Causality:** If version `V2` is created knowing about version `V1` (e.g., `V2` was created using `V1` as context), `V2` supersedes `V1`.
+3.  **Synchronization:** When two DVVs are merged (`sync`), the resulting history is the point-wise maximum of both. Any sibling from one DVV is retained in the merged result *only if* it hasn't been superseded by the other DVV's history.
+
+## Usage
+
+### 1. Construction and Initialization
+
+You can start with an empty DVV or a singleton:
+
+```haskell
+import Data.DVV
+import qualified Data.HashMap.Strict as Map
+
+-- An empty DVV
+empty :: DVV String Int
+empty = EmptyDVV
+
+-- A singleton DVV (initial write)
+initial :: DVV String Int
+initial = SingletonDVV "actor1" 42
+```
+
+### 2. Recording Events
+
+Use `event` to record new updates. You can optionally provide a `VersionVector` as context to indicate which versions the new update supersedes.
+
+```haskell
+-- Recording a new event on top of existing state
+-- This will increment actor1's counter.
+v1 = event initial Nothing "actor1" 43
+
+-- Providing context to prune siblings
+-- If 'v1' had multiple siblings, passing its 'context' here would replace them
+v2 = event v1 (Just (context v1)) "actor2" 44
+```
+
+### 3. Synchronization (Merging)
+
+Merge two DVVs to resolve their histories and collect concurrent siblings.
+
+```haskell
+let d1 = SingletonDVV "A" 10
+    d2 = SingletonDVV "B" 20
+    merged = sync d1 d2
+-- 'merged' now contains both values as siblings because they are concurrent.
+-- values merged == [10, 20]
+```
+
+### 4. Conflict Resolution
+
+When a `sync` results in multiple siblings (a conflict), you can reconcile them.
+
+#### Manual Reconciliation
+
+```haskell
+-- Pick the maximum value from siblings
+let resolved = reconcile max "resolver-actor" merged
+```
+
+#### Last-Write-Wins (LWW)
+
+If your values have timestamps or you just want a deterministic winner:
+
+```haskell
+-- Assuming values are (Timestamp, ActualValue)
+let lwwResolved = lww (\(t1, _) (t2, _) -> compare t1 t2) "actor" conflictDvv
+```
+
+## Type Safety
+
+This library uses `HashMap` internally for efficiency and requires actor IDs to be instances of `Hashable`. The `DVV` type is also an instance of `Functor`, `Foldable`, and `Traversable`, making it easy to manipulate the stored values.
+
+## Performance Considerations
+
+-   **Singleton Optimization:** `SingletonDVV` is a specialized constructor for the common case of a single value with no complex history, reducing memory overhead.
+-   **Pruning:** Use the `prune` function to truncate old causal history if the number of actors grows too large, though this should be used with caution as it affects future synchronization accuracy.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

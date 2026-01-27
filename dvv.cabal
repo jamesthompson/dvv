@@ -1,0 +1,50 @@
+cabal-version:      3.0
+name:               dvv
+version:            0.1.0.0
+license:            MIT
+license-file:       LICENSE
+maintainer:         jamesthompsonoxford@gmail.com
+author:             James R. Thompson
+synopsis:           A GHC-Haskell Dotted Version Vectors (DVV) library.
+description:
+    A library for working with Dotted Version Vectors in Haskell.
+
+category:           Data
+build-type:         Simple
+extra-source-files: README.md
+
+library
+    exposed-modules:  Data.DVV
+    hs-source-dirs:   src
+    default-language: Haskell2010
+    ghc-options:
+        -Wall -Wcompat -Widentities -Wincomplete-uni-patterns
+        -Wincomplete-record-updates -Wredundant-constraints
+        -Wnoncanonical-monad-instances -Wmissing-export-lists
+        -Wpartial-fields -Wmissing-deriving-strategies -fwrite-ide-info
+        -hiedir=.hie
+
+    build-depends:
+        base >=4.14 && <5,
+        unordered-containers,
+        hashable
+
+test-suite dvv-test
+    type:             exitcode-stdio-1.0
+    main-is:          Spec.hs
+    hs-source-dirs:   test
+    default-language: Haskell2010
+    ghc-options:
+        -Wall -Wcompat -Widentities -Wincomplete-uni-patterns
+        -Wincomplete-record-updates -Wredundant-constraints
+        -Wnoncanonical-monad-instances -Wmissing-export-lists
+        -Wpartial-fields -Wmissing-deriving-strategies -fwrite-ide-info
+        -hiedir=.hie
+
+    build-depends:
+        base >=4.14 && <5,
+        dvv,
+        hspec,
+        QuickCheck,
+        unordered-containers,
+        hashable
