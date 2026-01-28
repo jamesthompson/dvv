@@ -3,15 +3,20 @@ name:               dvv
 version:            0.1.0.0
 license:            MIT
 license-file:       LICENSE
-maintainer:         jamesthompsonoxford@gmail.com
+maintainer:         James R. Thompson <jamesthompsonoxford@gmail.com>
 author:             James R. Thompson
 synopsis:           A GHC-Haskell Dotted Version Vectors (DVV) library.
+homepage:           https://github.com/jamesthompson/dvv
 description:
     A library for working with Dotted Version Vectors in Haskell.
 
 category:           Data
 build-type:         Simple
 extra-source-files: README.md
+
+source-repository head
+  type: git
+  location: https://github.com/jamesthompson/dvv.git
 
 library
     exposed-modules:  Data.DVV
@@ -26,8 +31,8 @@ library
 
     build-depends:
         base >=4.14 && <5,
-        unordered-containers,
-        hashable
+        unordered-containers >=0.2.0.0 && <0.3,
+        hashable >=1.4.0.0 && <1.6
 
 test-suite dvv-test
     type:             exitcode-stdio-1.0
