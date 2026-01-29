@@ -3,16 +3,19 @@ name:               dvv
 version:            0.1.0.0
 license:            MIT
 license-file:       LICENSE
+copyright:          2026-Present, James R. Thompson
 maintainer:         James R. Thompson <jamesthompsonoxford@gmail.com>
 author:             James R. Thompson
-synopsis:           A GHC-Haskell Dotted Version Vectors (DVV) library.
+synopsis:           Dotted Version Vectors (DVV)
 homepage:           https://github.com/jamesthompson/dvv
 description:
-    A library for working with Dotted Version Vectors in Haskell.
+    Dotted Version Vectors (DVV) provide a mechanism for tracking causality
+    and detecting conflicts in distributed systems. This implementation supports
+    efficient synchronization, event recording, and conflict resolution.
 
 category:           Data
 build-type:         Simple
-extra-source-files: README.md
+extra-source-files: README.md fourmolu.yaml Setup.hs changelog.md
 
 source-repository head
   type: git

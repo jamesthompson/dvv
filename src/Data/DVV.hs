@@ -3,25 +3,35 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Data.DVV (
-  -- * Core Types
-  Count,
-  Dot (..),
-  VersionVector,
-  DVV (..),
+-- |
+-- Module      : Data.DVV
+-- Description : Dotted Version Vectors for causal tracking and conflict detection
+-- Copyright   : (c) James R. Thompson
+-- License     : BSD3
+-- Stability   : experimental
+--
+-- Dotted Version Vectors (DVVs) provide a mechanism for tracking causality
+-- and detecting conflicts in distributed systems. This implementation supports
+-- efficient synchronization, event recording, and conflict resolution.
+module Data.DVV
+  ( -- * Core Types
+    Count,
+    Dot (..),
+    VersionVector,
+    DVV (..),
 
-  -- * Operations
-  sync,
-  context,
-  event,
-  values,
-  prune,
-  reconcile,
-  lww,
+    -- * Operations
+    sync,
+    context,
+    event,
+    values,
+    prune,
+    reconcile,
+    lww,
 
-  -- * Analysis
-  size,
-)
+    -- * Analysis
+    size,
+  )
 where
 
 import Data.HashMap.Strict (HashMap)
@@ -39,25 +49,22 @@ type Count = Word64
 data Dot actorID = Dot !actorID !Count
   deriving stock (Eq, Show, Ord, Functor, Foldable, Traversable, Generic)
 
-{- | Dot is a pair of an actor (identifier) and a logical counter,
-but we hash using the actor value only.
--}
+-- | Dot is a pair of an actor (identifier) and a logical counter,
+-- but we hash using the actor value only.
 instance (Hashable actorID) => Hashable (Dot actorID) where
   hashWithSalt salt (Dot actorID _) = hashWithSalt salt actorID
 
-{- | A Version Vector is a mapping from actor IDs to their latest known counter.
-Requires keys to be Hashable.
--}
+-- | A Version Vector is a mapping from actor IDs to their latest known counter.
+-- Requires keys to be Hashable.
 type VersionVector actorID = HashMap actorID Count
 
-{- | A Dotted Version Vector (DVV) consisting of a Causal History (Version Vector)
-and a set of concurrent values associated with Dots.
-
-Note: A Singleton has no causal history, its counter is implicitly 1.
-
-'actor' is the type of actor IDs. Must be Hashable.
-'value' is the type of the value stored.
--}
+-- | A Dotted Version Vector (DVV) consisting of a Causal History (Version Vector)
+-- and a set of concurrent values associated with Dots.
+--
+-- Note: A Singleton has no causal history, its counter is implicitly 1.
+--
+-- @actorID@ is the type of actor IDs. Must be Hashable.
+-- @value@ is the type of the value stored.
 data DVV actorID value
   = EmptyDVV
   | SingletonDVV !actorID !value
@@ -79,8 +86,8 @@ context EmptyDVV = Map.empty
 context (SingletonDVV actor _) = Map.singleton actor 1
 context (DVV causalHistory vals) =
   foldl' updateVec causalHistory (Map.keys vals)
- where
-  updateVec m (Dot actor counter) = Map.insertWith max actor counter m
+  where
+    updateVec m (Dot actor counter) = Map.insertWith max actor counter m
 
 -- | Safely extracts the components of any DVV state into a standard history map and values map.
 extractComponents ::
@@ -188,14 +195,13 @@ reconcile mergeFn actorID dvv
           ctx = context dvv
        in event dvv (Just ctx) actorID mergedVal
 
-{- | Last-Write-Wins (LWW) reconciliation.
-
-Reduces multiple concurrent values (siblings) into a single "winning" value based on the provided
-comparison function. This operation creates a new event (dot) for the winning value that
-supersedes all current values in the DVV.
-
-If there are zero or one values, the DVV is returned unchanged.
--}
+-- | Last-Write-Wins (LWW) reconciliation.
+--
+-- Reduces multiple concurrent values (siblings) into a single "winning" value based on the provided
+-- comparison function. This operation creates a new event (dot) for the winning value that
+-- supersedes all current values in the DVV.
+--
+-- If there are zero or one values, the DVV is returned unchanged.
 lww ::
   (Hashable actorID) =>
   -- | A function to compare two values. 'GT' indicates the first value wins.
@@ -206,10 +212,10 @@ lww ::
   DVV actorID value ->
   DVV actorID value
 lww compareFn = reconcile pickBest
- where
-  pickBest v1 v2 = case compareFn v1 v2 of
-    GT -> v1
-    _ -> v2
+  where
+    pickBest v1 v2 = case compareFn v1 v2 of
+      GT -> v1
+      _ -> v2
 
 -- | Return the number of elements (siblings) in the DVV.
 size :: DVV actorID value -> Int
