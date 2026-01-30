@@ -40,7 +40,7 @@ import Algebra.PartialOrd (PartialOrd (..))
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import Data.Hashable (Hashable (hashWithSalt))
-import Data.List (foldl', foldl1', sortBy, sortOn)
+import Data.List (foldl', foldl1', sortBy)
 import Data.Maybe (fromMaybe)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
@@ -51,9 +51,6 @@ type Count = Word64
 -- | A Dot is a pair of a replica ID and a logical counter.
 data Dot actorID = Dot !actorID !Count
   deriving stock (Eq, Show, Functor, Generic)
-
-instance (Ord actorID) => Ord (Dot actorID) where
-  compare (Dot a1 c1) (Dot a2 c2) = compare a1 a2 <> compare c1 c2
 
 {- | Dots are partially ordered: two dots are comparable if and only if they
 share the same actor ID, in which case they are ordered by their counter.
@@ -72,11 +69,6 @@ instance (Hashable actorID) => Hashable (Dot actorID) where
 It stores a list of counts to actors for efficient leq checks.
 Requires keys to be Hashable.
 -}
-
-{- | A Version Vector is a mapping from actor IDs to their latest known counter.
-It stores a list of counts to actors for efficient leq checks.
-Requires keys to be Hashable.
--}
 data VersionVector actorID = VersionVector
   { vvMap :: HashMap actorID Count
   , vvDesc :: [(Count, actorID)]
@@ -85,10 +77,6 @@ data VersionVector actorID = VersionVector
 
 instance (Eq actorID) => Eq (VersionVector actorID) where
   (VersionVector m1 _) == (VersionVector m2 _) = m1 == m2
-
-instance (Ord actorID) => Ord (VersionVector actorID) where
-  compare (VersionVector m1 _) (VersionVector m2 _) =
-    compare (sortOn fst $ Map.toList m1) (sortOn fst $ Map.toList m2)
 
 instance (Hashable actorID, Eq actorID) => PartialOrd (VersionVector actorID) where
   leq (VersionVector _ sortedList) (VersionVector m2 _) =
@@ -154,12 +142,11 @@ instance (Hashable actorID, Ord value, Ord actorID) => Ord (DVV actorID value) w
     | leq a b = LT
     | leq b a = GT
     | otherwise =
-        let (vv1, vals1) = extractComponents a
-            (vv2, vals2) = extractComponents b
-            vvCmp = compare vv1 vv2
-         in if vvCmp /= EQ
-              then vvCmp
-              else compare (sortOn fst $ Map.toList vals1) (sortOn fst $ Map.toList vals2)
+        let (vv1, _) = extractComponents a
+            (vv2, _) = extractComponents b
+         in if not (leq vv1 vv2)
+              then LT
+              else GT
 
 -- | Extract all values currently in the DVV.
 values :: DVV actorID value -> [value]

@@ -243,12 +243,6 @@ main = hspec $ do
              in all (`Map.member` ctx) actors
 
     describe "PartialOrd and Ord Properties" $ do
-      it "Dot Ord follows (counter, actorID)" $ do
-        let d1 = Dot "A" 10 :: Dot ID
-            d2 = Dot "B" 10 :: Dot ID
-            d3 = Dot "A" 11 :: Dot ID
-        compare d1 d2 `shouldBe` LT -- same counter, "A" < "B"
-        compare d1 d3 `shouldBe` LT -- 10 < 11
       it "Dot PartialOrd is only defined for same actor" $ do
         let d1 = Dot "A" 10 :: Dot ID
             d2 = Dot "B" 10 :: Dot ID
