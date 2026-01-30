@@ -3,41 +3,44 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- |
--- Module      : Data.DVV
--- Description : Dotted Version Vectors for causal tracking and conflict detection
--- Copyright   : (c) James R. Thompson
--- License     : BSD3
--- Stability   : experimental
---
--- Dotted Version Vectors (DVVs) provide a mechanism for tracking causality
--- and detecting conflicts in distributed systems. This implementation supports
--- efficient synchronization, event recording, and conflict resolution.
-module Data.DVV
-  ( -- * Core Types
-    Count,
-    Dot (..),
-    VersionVector,
-    DVV (..),
+{- |
+Module      : Data.DVV
+Description : Dotted Version Vectors for causal tracking and conflict detection
+Copyright   : (c) James R. Thompson
+License     : BSD3
+Stability   : experimental
 
-    -- * Operations
-    sync,
-    context,
-    event,
-    values,
-    prune,
-    reconcile,
-    lww,
+Dotted Version Vectors (DVVs) provide a mechanism for tracking causality
+and detecting conflicts in distributed systems. This implementation supports
+efficient synchronization, event recording, and conflict resolution.
+-}
+module Data.DVV (
+  -- * Core Types
+  Count,
+  Dot (..),
+  VersionVector (..),
+  DVV (..),
 
-    -- * Analysis
-    size,
-  )
+  -- * Operations
+  sync,
+  context,
+  event,
+  values,
+  prune,
+  reconcile,
+  lww,
+
+  -- * Analysis
+  mkVersionVector,
+  size,
+)
 where
 
+import Algebra.PartialOrd (PartialOrd (..))
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import Data.Hashable (Hashable (hashWithSalt))
-import Data.List (foldl', foldl1')
+import Data.List (foldl', foldl1', sortBy, sortOn)
 import Data.Maybe (fromMaybe)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
@@ -47,29 +50,116 @@ type Count = Word64
 
 -- | A Dot is a pair of a replica ID and a logical counter.
 data Dot actorID = Dot !actorID !Count
-  deriving stock (Eq, Show, Ord, Functor, Foldable, Traversable, Generic)
+  deriving stock (Eq, Show, Functor, Generic)
 
--- | Dot is a pair of an actor (identifier) and a logical counter,
--- but we hash using the actor value only.
+instance (Ord actorID) => Ord (Dot actorID) where
+  compare (Dot a1 c1) (Dot a2 c2) = compare a1 a2 <> compare c1 c2
+
+{- | Dots are partially ordered: two dots are comparable if and only if they
+share the same actor ID, in which case they are ordered by their counter.
+-}
+instance (Eq actorID) => PartialOrd (Dot actorID) where
+  leq (Dot a1 c1) (Dot a2 c2) = a1 == a2 && c1 <= c2
+  comparable (Dot a1 _) (Dot a2 _) = a1 == a2
+
+{- | Dot is a pair of an actor (identifier) and a logical counter,
+but we hash using the actor value only.
+-}
 instance (Hashable actorID) => Hashable (Dot actorID) where
   hashWithSalt salt (Dot actorID _) = hashWithSalt salt actorID
 
--- | A Version Vector is a mapping from actor IDs to their latest known counter.
--- Requires keys to be Hashable.
-type VersionVector actorID = HashMap actorID Count
+{- | A Version Vector is a mapping from actor IDs to their latest known counter.
+It stores a list of counts to actors for efficient leq checks.
+Requires keys to be Hashable.
+-}
 
--- | A Dotted Version Vector (DVV) consisting of a Causal History (Version Vector)
--- and a set of concurrent values associated with Dots.
---
--- Note: A Singleton has no causal history, its counter is implicitly 1.
---
--- @actorID@ is the type of actor IDs. Must be Hashable.
--- @value@ is the type of the value stored.
+{- | A Version Vector is a mapping from actor IDs to their latest known counter.
+It stores a list of counts to actors for efficient leq checks.
+Requires keys to be Hashable.
+-}
+data VersionVector actorID = VersionVector
+  { vvMap :: HashMap actorID Count
+  , vvDesc :: [(Count, actorID)]
+  }
+  deriving stock (Show, Generic)
+
+instance (Eq actorID) => Eq (VersionVector actorID) where
+  (VersionVector m1 _) == (VersionVector m2 _) = m1 == m2
+
+instance (Ord actorID) => Ord (VersionVector actorID) where
+  compare (VersionVector m1 _) (VersionVector m2 _) =
+    compare (sortOn fst $ Map.toList m1) (sortOn fst $ Map.toList m2)
+
+instance (Hashable actorID, Eq actorID) => PartialOrd (VersionVector actorID) where
+  leq (VersionVector _ sortedList) (VersionVector m2 _) =
+    all (\(c, a) -> c <= Map.findWithDefault 0 a m2) sortedList
+
+-- | Helper to construct valid VersionVector
+mkVersionVector :: HashMap actorID Count -> VersionVector actorID
+mkVersionVector m =
+  VersionVector
+    m
+    ( sortDesc fst $
+        map (\(a, c) -> (c, a)) (Map.toList m)
+    )
+ where
+  sortDesc keyFn = sortBy (\x y -> compare (keyFn y) (keyFn x))
+
+{- | A Dotted Version Vector (DVV) consisting of a Causal History (Version Vector)
+and a set of concurrent values associated with Dots.
+
+Note: A Singleton has no causal history, its counter is implicitly 1.
+
+@actorID@ is the type of actor IDs. Must be Hashable.
+@value@ is the type of the value stored.
+-}
 data DVV actorID value
   = EmptyDVV
   | SingletonDVV !actorID !value
   | DVV !(VersionVector actorID) !(HashMap (Dot actorID) value)
-  deriving stock (Eq, Show, Ord, Functor, Foldable, Traversable, Generic)
+  deriving stock (Eq, Show, Generic)
+
+isSeenBy ::
+  (Ord actorID, Hashable actorID) =>
+  Dot actorID ->
+  DVV actorID value ->
+  Bool
+isSeenBy (Dot i n) dvv =
+  case dvv of
+    EmptyDVV -> False
+    SingletonDVV a _ ->
+      -- A dot is seen by a singleton if it's the same dot (or 0)
+      Dot i n == Dot a 1
+    DVV vv dots ->
+      -- 1. Check if the counter is within the compacted summary
+      n <= Map.findWithDefault 0 i (vvMap vv)
+        ||
+        -- 2. OR check if this specific dot is in the active set
+        Map.member (Dot i n) dots
+
+-- | DVV partial order is defined by the partial order of their causal histories.
+instance (Hashable actorID, Eq value, Ord actorID) => PartialOrd (DVV actorID value) where
+  leq EmptyDVV _ = True
+  leq _ EmptyDVV = False
+  leq (SingletonDVV i1 _) d2 = Dot i1 1 `isSeenBy` d2 -- counters start at 1
+  leq (DVV vv1 dots1) d2 =
+    let vv2 = case d2 of
+          DVV v _ -> v
+          _ -> mkVersionVector Map.empty -- EmptyDVV and SingletonDVV have no causal history
+     in leq vv1 vv2 && all (`isSeenBy` d2) (Map.keys dots1)
+
+instance (Hashable actorID, Ord value, Ord actorID) => Ord (DVV actorID value) where
+  compare a b
+    | a == b = EQ
+    | leq a b = LT
+    | leq b a = GT
+    | otherwise =
+        let (vv1, vals1) = extractComponents a
+            (vv2, vals2) = extractComponents b
+            vvCmp = compare vv1 vv2
+         in if vvCmp /= EQ
+              then vvCmp
+              else compare (sortOn fst $ Map.toList vals1) (sortOn fst $ Map.toList vals2)
 
 -- | Extract all values currently in the DVV.
 values :: DVV actorID value -> [value]
@@ -82,20 +172,21 @@ context ::
   (Hashable actorID) =>
   DVV actorID value ->
   VersionVector actorID
-context EmptyDVV = Map.empty
-context (SingletonDVV actor _) = Map.singleton actor 1
+context EmptyDVV = mkVersionVector Map.empty
+context (SingletonDVV actor _) = mkVersionVector (Map.singleton actor 1)
 context (DVV causalHistory vals) =
-  foldl' updateVec causalHistory (Map.keys vals)
-  where
-    updateVec m (Dot actor counter) = Map.insertWith max actor counter m
+  let finalMap = foldl' updateVec (vvMap causalHistory) (Map.keys vals)
+   in mkVersionVector finalMap
+ where
+  updateVec m (Dot actor counter) = Map.insertWith max actor counter m
 
 -- | Safely extracts the components of any DVV state into a standard history map and values map.
 extractComponents ::
   (Hashable actorID) =>
   DVV actorID value ->
   (VersionVector actorID, HashMap (Dot actorID) value)
-extractComponents EmptyDVV = (Map.empty, Map.empty)
-extractComponents (SingletonDVV actor val) = (Map.empty, Map.singleton (Dot actor 1) val)
+extractComponents EmptyDVV = (mkVersionVector Map.empty, Map.empty)
+extractComponents (SingletonDVV actor val) = (mkVersionVector Map.empty, Map.singleton (Dot actor 1) val)
 extractComponents (DVV vec vals) = (vec, vals)
 
 -- | Synchronize (merge) two DVVs.
@@ -120,7 +211,7 @@ merge ::
   HashMap (Dot actorID) value ->
   DVV actorID value
 merge vL valsL vR valsR =
-  let newVec = Map.unionWith max vL vR
+  let newVec = Map.unionWith max (vvMap vL) (vvMap vR)
       -- Use unionWith to handle duplicate dots consistently (pick min for determinism)
       candidates = Map.unionWith min valsL valsR
       isActive (Dot actor counter) _ =
@@ -131,7 +222,7 @@ merge vL valsL vR valsR =
    in case Map.toList newVals of
         [] -> EmptyDVV
         [(Dot actor 1, val)] | Map.null newVec -> SingletonDVV actor val
-        _ -> DVV newVec newVals
+        _ -> DVV (mkVersionVector newVec) newVals
 
 -- | Record a new event (update).
 event ::
@@ -146,21 +237,21 @@ event ::
   value ->
   DVV actorID value
 event currentState maybeContext actorID newValue =
-  let ctx = fromMaybe Map.empty maybeContext
+  let ctx = fromMaybe (mkVersionVector Map.empty) maybeContext
       (causalHistory, vals) = extractComponents currentState
-      currentMax = Map.lookup actorID (context currentState)
+      currentMax = Map.lookup actorID (vvMap (context currentState))
       nextCount = maybe 1 (+ 1) currentMax
       newDot = Dot actorID nextCount
 
       filterOld (Dot i c) _ =
-        case Map.lookup i ctx of
+        case Map.lookup i (vvMap ctx) of
           Nothing -> True
           Just cnt -> c > cnt
 
       filteredVals = Map.filterWithKey filterOld vals
-      newVec = Map.unionWith max causalHistory ctx
+      newVec = Map.unionWith max (vvMap causalHistory) (vvMap ctx)
       finalVals = Map.insert newDot newValue filteredVals
-   in DVV newVec finalVals
+   in DVV (mkVersionVector newVec) finalVals
 
 -- | Prune the causal history (Version Vector).
 prune ::
@@ -172,8 +263,8 @@ prune ::
 prune _ EmptyDVV = EmptyDVV
 prune _ s@(SingletonDVV _ _) = s
 prune threshold (DVV causalHistory vals) =
-  let newVec = Map.filter (>= threshold) causalHistory
-   in DVV newVec vals
+  let newVec = Map.filter (>= threshold) (vvMap causalHistory)
+   in DVV (mkVersionVector newVec) vals
 
 -- | Reconcile multiple siblings into a single value using a merge strategy.
 reconcile ::
@@ -191,17 +282,22 @@ reconcile mergeFn actorID dvv
   | size dvv <= 1 = dvv
   | otherwise =
       let allVals = values dvv
+          -- Foldl1' is safe because of guard size > 1 implies >= 2 elements (at least 2, actually size 0/1 handled)
+          -- But size counts elements. Empty=0, Singleton=1, DVV may have 0 in map?
+          -- DVV constructor usually ensures non-empty map if used correctly, or use EmptyDVV.
+          -- But let's follow existing logic.
           mergedVal = foldl1' mergeFn allVals
           ctx = context dvv
        in event dvv (Just ctx) actorID mergedVal
 
--- | Last-Write-Wins (LWW) reconciliation.
---
--- Reduces multiple concurrent values (siblings) into a single "winning" value based on the provided
--- comparison function. This operation creates a new event (dot) for the winning value that
--- supersedes all current values in the DVV.
---
--- If there are zero or one values, the DVV is returned unchanged.
+{- | Last-Write-Wins (LWW) reconciliation.
+
+Reduces multiple concurrent values (siblings) into a single "winning" value based on the provided
+comparison function. This operation creates a new event (dot) for the winning value that
+supersedes all current values in the DVV.
+
+If there are zero or one values, the DVV is returned unchanged.
+-}
 lww ::
   (Hashable actorID) =>
   -- | A function to compare two values. 'GT' indicates the first value wins.
@@ -212,10 +308,10 @@ lww ::
   DVV actorID value ->
   DVV actorID value
 lww compareFn = reconcile pickBest
-  where
-    pickBest v1 v2 = case compareFn v1 v2 of
-      GT -> v1
-      _ -> v2
+ where
+  pickBest v1 v2 = case compareFn v1 v2 of
+    GT -> v1
+    _ -> v2
 
 -- | Return the number of elements (siblings) in the DVV.
 size :: DVV actorID value -> Int

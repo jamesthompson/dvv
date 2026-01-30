@@ -113,6 +113,17 @@ If your values have timestamps or you just want a deterministic winner:
 let lwwResolved = lww (\(t1, _) (t2, _) -> compare t1 t2) "actor" conflictDvv
 ```
 
+### Partial Ordering and Causality
+
+DVVs implement a **Partial Order** to represent the causal relationship between versions. This is exposed via the `PartialOrd` typeclass (from `lattices` or `Algebra.PartialOrd`).
+
+-   **`leq` (Less than or Equal):** `A <= B` means that `A` is a causal ancestor of (or equal to) `B`. In other words, `B` "knows" everything `A` knows.
+    -   Implementation: For every actor in `A`'s history, `B`'s history must have a counter greater than or equal to `A`'s.
+-   **Strict Inequality:** `A < B` means `A <= B` AND `A /= B`. `A` happened strictly before `B`.
+-   **Concurrent (Incomparable):** If neither `A <= B` nor `B <= A` holds, then `A` and `B` are **concurrent** (`||`). This indicates a conflict that needs to be resolved.
+
+The `sync` operation computes the Least Upper Bound (LUB) of two DVVs, effectively merging their histories and preserving all concurrent values (siblings) until they are reconciled.
+
 ## Type Safety
 
 This library uses `HashMap` internally for efficiency and requires actor IDs to be instances of `Hashable`. The `DVV` type is also an instance of `Functor`, `Foldable`, and `Traversable`, making it easy to manipulate the stored values.

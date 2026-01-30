@@ -35,7 +35,8 @@ library
     build-depends:
         base >=4.14 && <5,
         unordered-containers >=0.2.0.0 && <0.3,
-        hashable >=1.4.0.0 && <1.6
+        hashable >=1.4.0.0 && <1.6,
+        lattices >=2.0 && <2.3
 
 test-suite dvv-test
     type:             exitcode-stdio-1.0
@@ -55,4 +56,5 @@ test-suite dvv-test
         hspec,
         QuickCheck,
         unordered-containers,
-        hashable
+        hashable,
+        lattices
