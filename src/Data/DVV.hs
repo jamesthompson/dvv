@@ -39,10 +39,11 @@ module Data.DVV (
 where
 
 import Algebra.PartialOrd (PartialOrd (..))
+import Data.Function (on)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import Data.Hashable (Hashable (..))
-import Data.List (foldl', foldl1', sortBy)
+import Data.List (foldl', foldl1', sort, sortBy)
 import Data.Maybe (fromMaybe)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
@@ -111,7 +112,35 @@ data DVV actorID value
   = EmptyDVV
   | SingletonDVV !actorID !value
   | DVV !(VersionVector actorID) !(HashMap (Dot actorID) value)
-  deriving stock (Eq, Show, Generic)
+  deriving stock (Generic)
+
+instance (Hashable actorID, Eq value) => Eq (DVV actorID value) where
+  EmptyDVV == EmptyDVV = True
+  SingletonDVV a1 v1 == SingletonDVV a2 v2 = a1 == a2 && v1 == v2
+  DVV vv1 dots1 == DVV vv2 dots2 = vv1 == vv2 && dots1 == dots2
+  l == SingletonDVV a2 v2 = l == event EmptyDVV Nothing a2 v2
+  SingletonDVV a1 v1 == r = event EmptyDVV Nothing a1 v1 == r
+  _ == _ = False
+
+instance
+  (Show actorID, Show value, Ord actorID, Hashable actorID) =>
+  Show (DVV actorID value)
+  where
+  show dvv =
+    case dvv of
+      EmptyDVV -> "([],[])"
+      _ ->
+        let (_, dots) = extractComponents dvv
+            ctx = getVersionVectorCounts (context dvv)
+            allActors = sort (Map.keys ctx)
+            dotsList = Map.toList dots
+            groupedValues a =
+              map snd $
+                sortBy (flip compare `on` (\(Dot _ c, _) -> c)) $
+                  filter (\(Dot a' _, _) -> a' == a) dotsList
+
+            formattedEntries = [(a, Map.findWithDefault 0 a ctx, groupedValues a) | a <- allActors]
+         in show (formattedEntries, [] :: [value])
 
 isSeenBy ::
   (Ord actorID, Hashable actorID) =>

@@ -171,6 +171,52 @@ main = hspec $ do
       -- B remains at 1 (as history).
       context dLWW `shouldBe` mkVersionVector (Map.fromList [("A", 2), ("B", 1)])
 
+  describe "DVV Show Instance" $ do
+    it "should show EmptyDVV as Erlang empty DVVSet" $ do
+      show (EmptyDVV :: DVV ID Value) `shouldBe` "([],[])"
+
+    it "should show SingletonDVV as Erlang DVVSet with one entry" $ do
+      let d = SingletonDVV "A" "v1" :: DVV ID Value
+      -- ( [("A", 1, ["v1"])], [] )
+      show d `shouldBe` "([(\"A\",1,[\"v1\"])],[])"
+
+    it "should show concurrent values grouped by actor" $ do
+      let dA = SingletonDVV "A" "v1" :: DVV ID Value
+          dB = SingletonDVV "B" "v2"
+          d0 = sync dA dB
+      -- Two concurrent values: A:1:v1 and B:1:v2
+      show d0 `shouldBe` "([(\"A\",1,[\"v1\"]),(\"B\",1,[\"v2\"])],[])"
+
+    it "should show causal history and concurrent values correctly" $ do
+      let dA = SingletonDVV "A" "v1" :: DVV ID Value
+          ctxA = context dA
+          dB = event dA (Just ctxA) "B" "v2"
+      -- A:1 is history, B:1 is the current value
+      -- Format: [("A",1,[]), ("B",1,["v2"])]
+      show dB `shouldBe` "([(\"A\",1,[]),(\"B\",1,[\"v2\"])],[])"
+
+    it
+      "should correctly handle the example scenario from the Erlang documentation example"
+      $ do
+        -- Image Step 1: C1 PUT v1 ~ {} -> State A (A, 1, [v1])
+        let s0 = EmptyDVV :: DVV ID Value
+            s1 = event s0 Nothing "A" "v1"
+            s1' = SingletonDVV "A" "v1"
+        s1 `shouldBe` s1'
+        show s1 `shouldBe` "([(\"A\",1,[\"v1\"])],[])"
+
+        -- Image Step 2: C2 PUT v2 ~ {} -> State A (A, 2, [v2, v1])
+        -- C2's PUT is concurrent with C1's (context {})
+        let emptyCtx = mkVersionVector Map.empty
+            s2 = event s1 (Just emptyCtx) "A" "v2"
+        show s2 `shouldBe` "([(\"A\",2,[\"v2\",\"v1\"])],[])"
+
+        -- Image Step 3: C1 GET and then PUT v3 ~ (A, 1) -> State A (A, 3, [v3, v2])
+        -- C1 provides context (A, 1), so v1 is superseded but v2 is not.
+        let ctxA1 = mkVersionVector (Map.singleton "A" 1)
+            s3 = event s2 (Just ctxA1) "A" "v3"
+        show s3 `shouldBe` "([(\"A\",3,[\"v3\",\"v2\"])],[])"
+
   describe "DVV QuickCheck Properties" $ do
     it "sync is idempotent: sync d d == d (semantically)" $
       property $ \(d :: DVV ID Value) ->

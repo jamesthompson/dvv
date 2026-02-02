@@ -1,3 +1,6 @@
+# 0.1.2.1 [James R. Thompson](mailto:jamesthompsonoxford@gmail.com) February 2026
+Improve documentation and fix Eq instance
+
 # 0.1.2.0 [James R. Thompson](mailto:jamesthompsonoxford@gmail.com) February 2026
 Hide VersionVector field accessors to force smart constructor usage
 

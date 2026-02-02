@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               dvv
-version:            0.1.2.0
+version:            0.1.2.1
 license:            MIT
 license-file:       LICENSE
 copyright:          2026-Present, James R. Thompson
