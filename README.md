@@ -2,7 +2,9 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A GHC-Haskell implementation of [**Dotted Version Vectors (DVV)**](https://gsd.di.uminho.pt/members/vff/dotted-version-vectors-2012.pdf), a data structure for tracking causality and resolving conflicts in distributed systems. This library is inspired by the canonical [Erlang example implementation](https://github.com/ricardobcl/Dotted-Version-Vectors).
+A GHC-Haskell implementation of [**Dotted Version Vectors (DVV)**](https://gsd.di.uminho.pt/members/vff/dotted-version-vectors-2012.pdf), a data structure for tracking causality and resolving conflicts in distributed systems updating a single piece of data.
+
+This library is inspired by the canonical [Erlang DVVSet example implementation](https://github.com/ricardobcl/Dotted-Version-Vectors).
 
 ## Table of Contents
 
@@ -21,18 +23,18 @@ In distributed systems, multiple actors can concurrently update a piece of data.
 
 **Dotted Version Vectors** solve this by combining:
 1.  **History (Context):** A summary of all events seen by the system.
-2.  **Dots:** Discrete events (actor + sequence number) that created specific values.
+2.  **Dots:** Discrete events (actor + sequence number) that updated specific values
 3.  **Siblings:** A set of values that are concurrent (i.e., none of them has "seen" the others).
 
 ## Key Concepts
 
--   **Dot:** A pair `{Actor, Counter}` representing a single write.
--   **History (Version Vector):** A mapping from actors to their latest sequence numbers.
--   **DVV:** A structure containing a history and a set of active siblings.
+-   **Dot:** A pair `Actor x Count` representing a single write.
+-   **History (Version Vector):** A mapping from actors to their latest sequence numbers. `Map Actor Count`
+-   **DVV:** A structure containing a history and a set of active siblings. `Map Actor Count x Map Dot Value`
 
 ### How it Works
 
-DVV provides a mechanism for **causal ordering**. When an actor writes a value, it creates a "Dot" – a unique identifier for that specific version of the data. 
+DVV provides a mechanism for **causal ordering**. When an actor writes a value, it creates a "Dot" – a unique identifier for that specific version of the data. Usually the "server", i.e. the thing doing the tracking of state is the "actor".
 
 ```mermaid
 graph TD
@@ -52,17 +54,17 @@ graph TD
 
 ### 1. Construction and Initialization
 
-You can start with an empty DVV or a singleton:
+You can start with an empty DVV or a singleton, i.e. no causal history, without a value or with the first value (count implicitly = 1):
 
 ```haskell
 import Data.DVV
 import qualified Data.HashMap.Strict as Map
 
--- An empty DVV
+-- An empty DVV without any causal history
 empty :: DVV String Int
 empty = EmptyDVV
 
--- A singleton DVV (initial write)
+-- A singleton DVV (initial write with no prior causal history)
 initial :: DVV String Int
 initial = SingletonDVV "actor1" 42
 ```
@@ -100,7 +102,7 @@ When a `sync` results in multiple siblings (a conflict), you can reconcile them.
 #### Manual Reconciliation
 
 ```haskell
--- Pick the maximum value from siblings
+-- Pick the maximum value from siblings, reconcile just takes a deterministic "decider" function over a pair of `concurrent values`.
 let resolved = reconcile max "resolver-actor" merged
 ```
 
@@ -126,7 +128,7 @@ The `sync` operation computes the Least Upper Bound (LUB) of two DVVs, effective
 
 ## Type Safety
 
-This library uses `HashMap` internally for efficiency and requires actor IDs to be instances of `Hashable`. The `DVV` type is also an instance of `Functor`, `Foldable`, and `Traversable`, making it easy to manipulate the stored values.
+This library uses `HashMap` internally for efficiency and requires actor IDs to be instances of `Hashable`.
 
 ## Performance Considerations
 
