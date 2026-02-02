@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A GHC-Haskell implementation of [**Dotted Version Vectors (DVV)**](https://gsd.di.uminho.pt/members/vff/dotted-version-vectors-2012.pdf), a data structure for tracking causality and resolving conflicts in distributed systems. This library is inspired by the canonical Erlang example implementation and leverages GHC to provide a safe and expressive API.
+A GHC-Haskell implementation of [**Dotted Version Vectors (DVV)**](https://gsd.di.uminho.pt/members/vff/dotted-version-vectors-2012.pdf), a data structure for tracking causality and resolving conflicts in distributed systems. This library is inspired by the canonical [Erlang example implementation](https://github.com/ricardobcl/Dotted-Version-Vectors).
 
 ## Table of Contents
 
