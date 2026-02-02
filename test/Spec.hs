@@ -194,16 +194,16 @@ main = hspec $ do
         let ctx1 = context d1
             ctxSync = context (sync d1 d2)
          in all
-              (\(k, v) -> Map.lookup k (vvMap ctxSync) >= Just v)
-              (Map.toList (vvMap ctx1))
+              (\(k, v) -> Map.lookup k (getVersionVectorCounts ctxSync) >= Just v)
+              (Map.toList (getVersionVectorCounts ctx1))
 
     it "event increases context counter for the actor" $
       property $ \(d :: DVV ID Value) (actor :: ID) (val :: Value) ->
         let ctx = context d
             d' = event d (Just ctx) actor val
             ctx' = context d'
-            oldCount = Map.findWithDefault 0 actor (vvMap ctx)
-            newCount = Map.findWithDefault 0 actor (vvMap ctx')
+            oldCount = Map.findWithDefault 0 actor (getVersionVectorCounts ctx)
+            newCount = Map.findWithDefault 0 actor (getVersionVectorCounts ctx')
          in newCount `shouldBe` (oldCount + 1)
 
     it "event with full context produces exactly one value" $
@@ -236,9 +236,9 @@ main = hspec $ do
       property $ \(d :: DVV ID Value) ->
         case d of
           EmptyDVV -> True
-          SingletonDVV actor _ -> Map.member actor (vvMap (context d))
+          SingletonDVV actor _ -> Map.member actor (getVersionVectorCounts (context d))
           DVV _ vals ->
-            let ctx = vvMap (context d)
+            let ctx = getVersionVectorCounts (context d)
                 actors = [actor | Dot actor _ <- Map.keys vals]
              in all (`Map.member` ctx) actors
 

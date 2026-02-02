@@ -18,7 +18,9 @@ module Data.DVV (
   -- * Core Types
   Count,
   Dot (..),
-  VersionVector (..),
+  VersionVector,
+  mkVersionVector,
+  getVersionVectorCounts,
   DVV (..),
 
   -- * Operations
@@ -31,15 +33,15 @@ module Data.DVV (
   lww,
 
   -- * Analysis
-  mkVersionVector,
   size,
+  extractComponents,
 )
 where
 
 import Algebra.PartialOrd (PartialOrd (..))
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
-import Data.Hashable (Hashable (hashWithSalt))
+import Data.Hashable (Hashable (..))
 import Data.List (foldl', foldl1', sortBy)
 import Data.Maybe (fromMaybe)
 import Data.Word (Word64)
@@ -92,6 +94,10 @@ mkVersionVector m =
     )
  where
   sortDesc keyFn = sortBy (\x y -> compare (keyFn y) (keyFn x))
+
+-- | Helper to extract the map of counts from a VersionVector, we hide the other field accessors
+getVersionVectorCounts :: VersionVector actorID -> HashMap actorID Count
+getVersionVectorCounts (VersionVector m _) = m
 
 {- | A Dotted Version Vector (DVV) consisting of a Causal History (Version Vector)
 and a set of concurrent values associated with Dots.
